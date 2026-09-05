@@ -1,0 +1,16 @@
+{
+  "name": "follow-nancy-pelosi",
+  "version": "1.0.0",
+  "description": "미국 하원 사무처 공시를 실시간으로 파싱해 낸시 펠로시(및 다른 의원)의 주식 거래와 매매 시그널을 보여주는 웹앱",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "pdfjs-dist": "^4.10.38"
+  },
+  "license": "MIT"
+}
