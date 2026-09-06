@@ -11,13 +11,25 @@
 
 ### 1. 비밀값이 커밋에 섞여 있지 않은지 확인
 
+단어가 아니라 **값처럼 생긴 문자열**을 찾습니다. (`${{ secrets.NAME }}` 같은 *참조*는 비밀값이 아니라 정상입니다)
+
 ```bash
-# 현재 파일 + 과거 커밋 전체에서 흔한 비밀값 패턴 검색
-git grep -InE '(api[_-]?key|secret|token|password|BEGIN [A-Z ]*PRIVATE KEY)' $(git rev-list --all) -- . | head -50
+# 과거 커밋 전체에서 "키 = 긴 문자열" 형태 검색
+git grep -InE '(api[_-]?key|secret|token|password)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9/_+=.-]{24,}' \
+  $(git rev-list --all) -- . | grep -v 'secrets\.'
+
+# 개인키 파일이 섞여 들어갔는지
+git grep -InE 'BEGIN [A-Z ]*PRIVATE KEY' $(git rev-list --all) -- .
 ```
 
-아무것도 안 나오면 깨끗합니다. **뭔가 나온다면 퍼블릭 전환을 멈추고** 해당 키를 먼저 폐기(rotate)한 뒤,
-`git filter-repo`로 히스토리에서 제거하세요. (지운 뒤에도 그 키는 죽은 것으로 취급해야 합니다.)
+둘 다 출력이 없으면 깨끗합니다. **이 저장소는 현재 둘 다 비어 있습니다.**
+
+무언가 나온다면 퍼블릭 전환을 멈추고, ① 해당 키를 발급처에서 먼저 폐기(rotate)한 뒤
+② `git filter-repo`로 히스토리에서 제거하세요. 지운 뒤에도 그 키는 죽은 것으로 취급해야 합니다.
+
+전환 후에는 GitHub의 자동 감시도 켜두세요 — 퍼블릭 저장소는 무료입니다.
+**Settings → Code security → Secret scanning**과 **Push protection**을 모두 Enable 하면,
+실수로 토큰을 커밋해도 푸시 단계에서 막아줍니다.
 
 ### 2. 무시 목록 확인
 
