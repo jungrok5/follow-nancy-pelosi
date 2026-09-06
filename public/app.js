@@ -8,6 +8,13 @@ const el = (tag, props = {}, children = []) => {
 
 const state = { report: null, filter: 'ALL', query: '', timer: null };
 
+/** 표 셀. data-label은 모바일 카드형 레이아웃에서 항목 이름으로 쓰인다. */
+const cell = ({ className = '', label, text, children }) => {
+  const td = el('td', { className }, children ?? (text != null ? [text] : []));
+  if (label != null) td.dataset.label = label;
+  return td;
+};
+
 const usd = (n, digits = 2) =>
   Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: digits })}` : '—';
 const pct = (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(1)}%` : '—');
@@ -16,6 +23,14 @@ const compactUSD = (n) =>
   !Number.isFinite(n) || n === 0 ? '—'
   : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M`
   : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${n}`;
+
+/** 공시 시각은 미 동부 기준. 'MM/DD HH:mm' 로 짧게. */
+const etShort = (iso) => {
+  const opts = { timeZone: 'America/New_York', hour12: false };
+  const date = new Intl.DateTimeFormat('en-US', { ...opts, month: '2-digit', day: '2-digit' }).format(new Date(iso));
+  const time = new Intl.DateTimeFormat('en-GB', { ...opts, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  return `${date} ${time}`;
+};
 
 const KIND_CLASS = {
   BUY: 'k-buy', CALL_BUY: 'k-call', EXERCISE: 'k-neutral',
@@ -77,9 +92,7 @@ function render() {
 function renderFreshness(r) {
   const s = r.summary;
   const hrs = s.hoursSincePublished;
-  const publishedText = s.latestPublishedAt
-    ? new Date(s.latestPublishedAt).toLocaleString('ko-KR', { timeZone: 'America/New_York' }) + ' ET'
-    : (s.latestFilingDate ?? '—');
+  const publishedText = s.latestPublishedAt ? `${etShort(s.latestPublishedAt)} ET` : (s.latestFilingDate ?? '—');
   const elapsed = hrs == null ? '' : hrs < 48 ? `${hrs}시간 전 게시` : `${Math.round(hrs / 24)}일 전 게시`;
   const dot = hrs == null ? 'cold' : hrs <= 24 ? '' : hrs <= 24 * 7 ? 'warm' : 'cold';
 
@@ -253,15 +266,15 @@ function renderTransactions() {
   $('#tx-body').replaceChildren(
     ...rows.map((t) =>
       el('tr', {}, [
-        el('td', { className: 'mono', textContent: t.transactionDate }),
-        el('td', { className: 'mono', textContent: t.ticker ?? '—' }),
-        el('td', { className: 'asset' }, [t.asset, t.description ? el('span', { className: 'desc', textContent: t.description }) : null]),
-        el('td', {}, [el('span', { className: `kind ${KIND_CLASS[t.kind] ?? 'k-neutral'}`, textContent: t.kindLabel })]),
-        el('td', { className: 'mono', textContent: t.amountLabel }),
-        el('td', { textContent: t.owner }),
-        el('td', { className: 'mono', textContent: t.filingDate ?? '—' }),
-        el('td', { className: 'mono', textContent: t.lagDays != null ? `${t.lagDays}일` : '—' }),
-        el('td', {}, [t.pdfUrl ? el('a', { href: t.pdfUrl, target: '_blank', rel: 'noopener', textContent: 'PDF' }) : '—']),
+        cell({ className: 'mono', text: t.transactionDate }),
+        cell({ className: 'mono', text: t.ticker ?? '—' }),
+        cell({ className: 'asset', label: '', children: [t.asset, t.description ? el('span', { className: 'desc', textContent: t.description }) : null] }),
+        cell({ label: '', children: [el('span', { className: `kind ${KIND_CLASS[t.kind] ?? 'k-neutral'}`, textContent: t.kindLabel })] }),
+        cell({ className: 'mono', label: '신고금액', text: t.amountLabel }),
+        cell({ label: '명의', text: t.owner }),
+        cell({ className: 'mono', label: '공시', text: t.filingDate ?? '—' }),
+        cell({ className: 'mono', label: '지연', text: t.lagDays != null ? `${t.lagDays}일` : '—' }),
+        cell({ label: '', children: [t.pdfUrl ? el('a', { href: t.pdfUrl, target: '_blank', rel: 'noopener', textContent: '원문 PDF' }) : '—'] }),
       ]),
     ),
   );
@@ -274,7 +287,7 @@ function renderFilings(r) {
       el('li', {}, [
         el('span', {}, [
           `공시 ${f.filingDate} · 문서번호 ${f.docId} · 거래 ${f.transactionCount ?? 0}건`,
-          f.publishedAt ? ` · 게시 ${new Date(f.publishedAt).toLocaleString('ko-KR', { timeZone: 'America/New_York' })} ET` : '',
+          f.publishedAt ? ` · 게시 ${etShort(f.publishedAt)} ET` : '',
           f.discoveredVia === 'live-search' ? el('span', { className: 'pill', textContent: '실시간 검색으로 감지' }) : '',
           f.error ? ` · 파싱 오류: ${f.error}` : '',
         ]),
@@ -302,6 +315,9 @@ $('#auto').addEventListener('change', (e) => {
   clearInterval(state.timer);
   if (e.target.checked) state.timer = setInterval(() => load({ refresh: true }), 5 * 60 * 1000);
 });
+
+// 좁은 화면에서는 안내문을 접어둔다.
+$('#notice').open = window.innerWidth > 760;
 
 load();
 loadTraders();

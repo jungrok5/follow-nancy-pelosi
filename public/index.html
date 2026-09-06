@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>낸시 펠로시 주식 트래커 · 실시간 공시 기반 매매 시그널</title>
 <meta name="description" content="미 하원 사무처 공시(PTR)를 실시간으로 파싱해 낸시 펠로시의 주식 거래와 따라 매수/매도 시그널을 근거와 함께 보여줍니다." />
+<meta name="theme-color" content="#0a0e14" />
+<meta name="color-scheme" content="dark" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -31,11 +33,14 @@
 </header>
 
 <div class="wrap">
-  <p class="notice">
-    <strong>먼저 알아두세요.</strong> 미 공직자 주식거래는 매매일로부터 최대 45일 이내에만 신고하면 됩니다.
-    아래 데이터는 <em>공시된 시점 기준</em>이며, 이미 주가에 반영되었을 수 있습니다.
-    각 카드의 <b>가격 반영도</b> 항목이 "지금 따라 사면 얼마나 비싸게 사는지"를 알려줍니다.
-  </p>
+  <details class="notice" id="notice">
+    <summary><strong>먼저 알아두세요</strong> — 공시는 거래 후 최대 45일 뒤에 나옵니다</summary>
+    <p>
+      미 공직자 주식거래는 매매일로부터 최대 45일 이내에만 신고하면 됩니다.
+      아래 데이터는 <em>공시된 시점 기준</em>이며, 이미 주가에 반영되었을 수 있습니다.
+      각 카드의 <b>가격 반영도</b> 항목이 "지금 따라 사면 얼마나 비싸게 사는지"를 알려줍니다.
+    </p>
+  </details>
 
   <section id="status" class="status">공시 데이터를 불러오는 중…</section>
 
