@@ -61,15 +61,39 @@ Cloudflare 자격증명은 오직 GitHub Secrets에만 들어갑니다.
 
 저장소 → **Settings → General → 맨 아래 Danger Zone → Change repository visibility → Make public**
 
-### 5. 전환 직후 Actions 권한 조이기
+### 5. 전환 직후 Actions 설정 점검
 
-- **Settings → Actions → General → Workflow permissions** → `Read repository contents and packages permissions` 선택
-  (이 워크플로들은 저장소에 쓰기를 하지 않습니다)
-- 같은 화면의 **Fork pull request workflows** → `Require approval for all external contributors` 유지
+**Settings → Actions → General** 한 화면에서 아래 네 가지를 확인합니다.
+대부분 GitHub 기본값이 이미 안전한 쪽이라, 실제로 바꿀 것은 많아야 하나입니다.
 
-> 포크에서 올린 PR에는 GitHub이 **시크릿을 절대 넘기지 않습니다.** 게다가 배포 워크플로(`deploy.yml`)는
+| 항목 | 기본값 | 이 프로젝트에 필요한 값 |
+| --- | --- | --- |
+| **Workflow permissions** | `Read repository contents and packages permissions` | **그대로.** 이 워크플로들은 저장소에 쓰기를 하지 않습니다 |
+| Allow GitHub Actions to create and approve pull requests | 해제 | **그대로 해제** |
+| **Actions permissions** | `Allow all actions and reusable workflows` | 그대로 두면 동작합니다 (아래 선택 사항 참고) |
+| **Fork pull request workflows** | `Require approval for first-time contributors` | 퍼블릭이면 `Require approval for all external contributors`로 올리는 것을 권장 |
+
+마지막 항목만 부연하면 — 기본값은 *한 번이라도 머지된 적 있는 기여자*의 PR은 승인 없이 워크플로가 도는 설정입니다.
+`all external contributors`로 올리면 내 저장소 멤버가 아닌 모든 사람의 PR이 매번 수동 승인을 거칩니다.
+개인 프로젝트라면 올려두는 편이 낫고, 외부 기여를 자주 받을 생각이면 기본값이 편합니다.
+
+> 어느 쪽이든 **포크 PR에는 GitHub이 시크릿을 절대 넘기지 않습니다.** 게다가 배포 워크플로(`deploy.yml`)는
 > `push`/`schedule`/`workflow_dispatch`만 쓰고 `pull_request`를 쓰지 않으므로, 남이 PR로 배포를 유발할 수 없습니다.
 > CI 워크플로(`ci.yml`)는 `pull_request`를 쓰지만 시크릿을 전혀 사용하지 않습니다.
+
+### 6. (선택) 공급망 리스크까지 줄이려면
+
+`Actions permissions`를 `Allow <계정>, and select non-<계정>, actions and reusable workflows`로 바꾸고
+허용 목록에 이 저장소가 쓰는 것만 넣습니다.
+
+```
+actions/*, cloudflare/wrangler-action@*
+```
+
+한 단계 더 가려면 같은 화면의 **Require actions to be pinned to a full-length commit SHA**를 켤 수 있는데,
+이걸 켜면 워크플로의 `@v4` 같은 **태그 참조가 전부 막힙니다.** 태그는 나중에 다른 커밋으로 옮겨질 수 있어
+SHA 고정이 더 안전하지만, 켜기 전에 `.github/workflows/*.yml`의 액션을 모두 커밋 SHA로 바꿔야 합니다.
+(예: `actions/checkout@8f4b7f8...  # v4.2.2`) 지금은 켜져 있지 않으므로 워크플로는 그대로 동작합니다.
 
 ---
 
