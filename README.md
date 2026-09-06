@@ -119,7 +119,7 @@ npx wrangler login
 npm run cf:deploy      # = build:data + wrangler deploy
 ```
 
-`https://pelosi-tracker.<계정>.workers.dev` 로 뜹니다. 커스텀 도메인은 Cloudflare 대시보드에서 연결하세요.
+`https://follow-nancy-pelosi.<계정>.workers.dev` 로 뜹니다. 커스텀 도메인은 Cloudflare 대시보드에서 연결하세요.
 
 > 📄 **클릭 단위 상세 가이드(퍼블릭 전환 안전 점검 + Cloudflare 값 발급 위치)는 [docs/DEPLOY.md](docs/DEPLOY.md)에 있습니다.**
 

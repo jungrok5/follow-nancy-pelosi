@@ -176,7 +176,7 @@ npx wrangler login
 npm run cf:deploy      # 공시 스냅샷 빌드 + 배포
 ```
 
-끝나면 `https://pelosi-tracker.<계정서브도메인>.workers.dev` 주소가 출력됩니다.
+끝나면 `https://follow-nancy-pelosi.<계정서브도메인>.workers.dev` 주소가 출력됩니다.
 `workers.dev subdomain not configured` 오류가 나면 대시보드 **Workers & Pages → 우측 subdomain 설정**에서 서브도메인을 한 번 만들어 주세요.
 
 ### 그다음부터는 자동
@@ -219,3 +219,30 @@ curl https://<배포주소>/api/health
 | GitHub Actions | 퍼블릭 **무제한** / 프라이빗 2,000분·월 | 회당 1~2분 × 48회/일 |
 
 프라이빗을 유지하려면 크론을 `0 */3 * * *`(3시간) 정도로 늦추세요. 퍼블릭이면 그대로 두면 됩니다.
+
+---
+
+## 참고: Cloudflare 대시보드의 "Git 연동(Workers Builds)"은 쓰지 않습니다
+
+Cloudflare에서 **Workers & Pages → Create → Import a repository** 로 들어가면
+저장소를 연결해 Cloudflare가 직접 빌드·배포하게 만드는 화면이 나옵니다.
+이 문서의 GitHub Actions 방식과 **같은 일을 하는 다른 방법**이라, 둘 다 켜면 한 워커에 두 시스템이 배포합니다.
+
+**이 프로젝트에서는 GitHub Actions 쪽을 씁니다.** 이유는 하나입니다 —
+Workers Builds에는 **스케줄(크론) 빌드가 없어서** git push 할 때만 빌드합니다.
+그러면 공시 데이터가 30분마다 갱신되지 않고, 코드를 푸시하는 날에만 갱신됩니다.
+
+굳이 Git 연동을 쓰고 싶다면 이렇게 채우세요(그리고 `deploy.yml`에서 `push:` 트리거를 지워 중복 배포를 막으세요).
+
+| 항목 | 값 |
+| --- | --- |
+| Project name | **`follow-nancy-pelosi`** — `wrangler.toml`의 `name`과 반드시 같아야 합니다 |
+| Build command | `npm run build:data` (비워두면 저장소에 커밋된 오래된 스냅샷이 그대로 배포됩니다) |
+| Deploy command | `npx wrangler deploy` (기본값 그대로) |
+| Builds for non-production branches | 해제 권장 (빌드 시간 절약. 브랜치 미리보기가 필요하면 유지) |
+| Protect with Cloudflare Access | **끄기** — 공개 사이트이므로 |
+| Advanced settings | 건드릴 것 없음 (환경변수·빌드 변수 불필요) |
+
+이 경우에도 30분 자동 갱신을 원하면 GitHub Actions의 `schedule` 트리거는 그대로 남겨둬야 하고,
+그러려면 어차피 `CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID` 시크릿이 필요합니다.
+결국 Actions 하나로 끝내는 편이 단순합니다.
