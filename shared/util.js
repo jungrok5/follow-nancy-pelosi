@@ -19,3 +19,22 @@ export const fmtUSD = (n) =>
   Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—';
 
 export const fmtPct = (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(1)}%` : '—');
+
+/** ISO 시각을 미 동부(공시 기준 시간대) 날짜 'YYYY-MM-DD'로. */
+export const etDate = (iso) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+
+/** ISO 시각을 '2026-08-21 10:26 ET' 형태로. */
+export const etDateTime = (iso) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(iso)).replace(',', '') + ' ET';
+
+export const hoursSince = (iso) => (iso ? Math.max(0, (Date.now() - Date.parse(iso)) / 3600000) : null);

@@ -199,6 +199,8 @@ function toTransaction(block, filing) {
   return {
     docId: filing.docId ?? null,
     filingDate: filing.filingDate ?? null,
+    publishedAt: filing.publishedAt ?? null,
+    discoveredVia: filing.discoveredVia ?? null,
     pdfUrl: filing.pdfUrl ?? null,
     owner: OWNERS[owner] ?? owner,
     ownerCode: owner || 'SELF',

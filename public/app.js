@@ -64,6 +64,7 @@ function render() {
     `${stale != null ? ` (${stale}일 전)` : ''} · 공시 문서 ${r.filings.length}건에서 거래 ${r.transactions.length}건 파싱 · ` +
     `갱신 ${new Date(r.generatedAt).toLocaleString('ko-KR')}`,
   );
+  renderFreshness(r);
   renderSummary(r);
   renderConclusion(r);
   renderFilters();
@@ -72,10 +73,48 @@ function render() {
   renderFilings(r);
 }
 
+/** 지연이 어디서 생기는지를 세 구간으로 나눠 보여준다. */
+function renderFreshness(r) {
+  const s = r.summary;
+  const hrs = s.hoursSincePublished;
+  const publishedText = s.latestPublishedAt
+    ? new Date(s.latestPublishedAt).toLocaleString('ko-KR', { timeZone: 'America/New_York' }) + ' ET'
+    : (s.latestFilingDate ?? '—');
+  const elapsed = hrs == null ? '' : hrs < 48 ? `${hrs}시간 전 게시` : `${Math.round(hrs / 24)}일 전 게시`;
+  const dot = hrs == null ? 'cold' : hrs <= 24 ? '' : hrs <= 24 * 7 ? 'warm' : 'cold';
+
+  const collected = r.dataBuiltAt ?? r.generatedAt;
+  const collectedAgo = Math.round((Date.now() - Date.parse(collected)) / 60000);
+  const live = r.sources?.liveSearch;
+
+  const cells = [
+    { k: '① 거래 → 공시 (법정 지연)', v: s.avgLagDays != null ? `평균 ${s.avgLagDays}일` : '—',
+      s: `최대 ${s.maxLagDays ?? '—'}일 · 법정 한도 45일 — 이 구간은 누구도 못 줄입니다`, dot: 'cold' },
+    { k: '② 공시 → 이 사이트 인지', v: collectedAgo < 90 ? `${collectedAgo}분 전 수집` : `${Math.round(collectedAgo / 60)}시간 전 수집`,
+      s: live?.ok ? '사무처 ZIP 인덱스 + 실시간 검색 병행' : 'ZIP 인덱스 기준(실시간 검색 실패)', dot: collectedAgo < 120 ? '' : 'warm' },
+    { k: '③ 최근 공시 게시 시각', v: publishedText, s: elapsed, dot },
+    { k: '④ 주가', v: '요청 시점 실시간', s: Object.values(r.quotes ?? {})[0]?.source ?? '시세 소스 없음', dot: '' },
+  ];
+
+  $('#freshness').hidden = false;
+  $('#freshness').replaceChildren(
+    ...cells.map((c) =>
+      el('div', {}, [
+        el('div', { className: 'k' }, [el('span', { className: `dot ${c.dot}` }), c.k]),
+        el('div', { className: 'v', textContent: c.v }),
+        el('div', { className: 's', textContent: c.s }),
+      ]),
+    ),
+  );
+}
+
 function renderSummary(r) {
   const s = r.summary;
   const stats = [
-    ['최근 공시일', s.latestFilingDate ?? '—', s.daysSinceLatestFiling != null ? `${s.daysSinceLatestFiling}일 경과` : ''],
+    ['최근 공시일', s.latestFilingDate ?? '—',
+      s.hoursSincePublished != null && s.hoursSincePublished < 48
+        ? `${s.hoursSincePublished}시간 전 게시`
+        : s.daysSinceLatestFiling != null ? `${s.daysSinceLatestFiling}일 경과` : ''],
     ['조회 구간 거래', `${s.tradeCount}건`, `${r.lookbackDays}일 이내 · 종목 ${s.tickerCount}개`],
     ['매수 / 매도', `${s.buyCount} / ${s.sellCount}`, `옵션 거래 ${s.optionCount}건`],
     ['평균 신고 지연', s.avgLagDays != null ? `${s.avgLagDays}일` : '—', s.maxLagDays != null ? `최대 ${s.maxLagDays}일` : ''],
@@ -233,7 +272,12 @@ function renderFilings(r) {
   $('#filings').replaceChildren(
     ...r.filings.map((f) =>
       el('li', {}, [
-        el('span', {}, [`공시 ${f.filingDate} · 문서번호 ${f.docId} · 거래 ${f.transactionCount ?? 0}건`, f.error ? ` · 파싱 오류: ${f.error}` : '']),
+        el('span', {}, [
+          `공시 ${f.filingDate} · 문서번호 ${f.docId} · 거래 ${f.transactionCount ?? 0}건`,
+          f.publishedAt ? ` · 게시 ${new Date(f.publishedAt).toLocaleString('ko-KR', { timeZone: 'America/New_York' })} ET` : '',
+          f.discoveredVia === 'live-search' ? el('span', { className: 'pill', textContent: '실시간 검색으로 감지' }) : '',
+          f.error ? ` · 파싱 오류: ${f.error}` : '',
+        ]),
         el('a', { href: f.pdfUrl, target: '_blank', rel: 'noopener', textContent: '원문 PDF 열기' }),
       ]),
     ),

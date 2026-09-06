@@ -2,7 +2,7 @@
 // "공시 코드 그대로" 보여주는 대신, 거래의 실질(콜옵션 신규매수 / 행사 / 기부 / 실매도)과
 // 규모·신고지연·공시 이후 주가 반영도를 함께 계산해 행동안과 근거를 만든다.
 import { closeOn, pctChange } from './quotes.js';
-import { clamp, daysAgoISO, diffDays, fmtPct, fmtUSD, todayISO } from './util.js';
+import { clamp, daysAgoISO, diffDays, etDateTime, fmtPct, fmtUSD, hoursSince, todayISO } from './util.js';
 
 /** 거래 성격별 가중치. 콜옵션 신규 매수가 가장 강한 확신 신호로 본다. */
 const KIND_WEIGHT = {
@@ -99,6 +99,7 @@ export function buildSignals(transactions, quotes = {}, { today = todayISO(), lo
 
     const latest = trades[0];
     const latestFiling = trades.map((t) => t.filingDate).filter(Boolean).sort().at(-1) ?? null;
+    const latestPublishedAt = trades.map((t) => t.publishedAt).filter(Boolean).sort().at(-1) ?? null;
     const daysSinceFiling = diffDays(latestFiling, today);
     const hasFreshFiling = daysSinceFiling != null && daysSinceFiling <= 45;
 
@@ -126,7 +127,7 @@ export function buildSignals(transactions, quotes = {}, { today = todayISO(), lo
     score = Math.round(clamp(score, 0, 100));
 
     const action = actionFor({ score, net, driftPct, hasFreshFiling });
-    const reasons = buildReasons({ ticker, trades, latest, latestFiling, daysSinceFiling, quote, price, tradeClose, refTrade, driftPct, sinceFilingPct, net, bull, bear });
+    const reasons = buildReasons({ ticker, trades, latest, latestFiling, latestPublishedAt, daysSinceFiling, quote, price, tradeClose, refTrade, driftPct, sinceFilingPct, net, bull, bear });
 
     signals.push({
       ticker,
@@ -148,6 +149,8 @@ export function buildSignals(transactions, quotes = {}, { today = todayISO(), lo
       sinceFilingPct,
       latestTradeDate: latest.transactionDate,
       latestFilingDate: latestFiling,
+      latestPublishedAt,
+      hoursSincePublished: latestPublishedAt ? Math.round(hoursSince(latestPublishedAt)) : null,
       daysSinceFiling,
       avgLagDays: Math.round(
         trades.map((t) => t.lagDays).filter((v) => v != null).reduce((s, v, _, arr) => s + v / arr.length, 0),
@@ -172,7 +175,7 @@ export function buildSignals(transactions, quotes = {}, { today = todayISO(), lo
 }
 
 function buildReasons(ctx) {
-  const { ticker, trades, latest, latestFiling, daysSinceFiling, price, tradeClose, refTrade, driftPct, sinceFilingPct, net, bull, bear } = ctx;
+  const { ticker, trades, latest, latestFiling, latestPublishedAt, daysSinceFiling, price, tradeClose, refTrade, driftPct, sinceFilingPct, net, bull, bear } = ctx;
   const reasons = [];
 
   // 1) 무엇을 했는가
@@ -192,12 +195,26 @@ function buildReasons(ctx) {
     });
   }
 
-  // 3) 신고 지연 = 정보의 신선도
+  // 3) 신고 지연 = 정보의 신선도. 공시 직후 몇 시간이 가장 값어치 있는 구간이라
+  //    게시 후 나흘 안쪽이면 '일'이 아니라 '시간'으로 보여준다.
   if (latestFiling) {
     const lag = latest.lagDays;
+    const hrs = latestPublishedAt ? Math.round(hoursSince(latestPublishedAt)) : null;
+    const elapsed =
+      hrs != null && hrs <= 96
+        ? `공시 게시 ${etDateTime(latestPublishedAt)} — ${hrs}시간 전`
+        : `오늘 기준 공시 후 ${daysSinceFiling}일 경과`;
+    const verdict =
+      hrs != null && hrs <= 24
+        ? '방금 공개된 정보로, 따라 살 여지가 가장 큰 구간입니다.'
+        : daysSinceFiling <= 7
+          ? '가장 신선한 구간입니다.'
+          : daysSinceFiling <= 45
+            ? '아직 유효 구간이지만 초기 반응은 지났습니다.'
+            : '이미 시장에 충분히 알려진 정보입니다.';
     reasons.push({
       tag: '정보 시차',
-      text: `거래일 ${latest.transactionDate} → 공시일 ${latestFiling} (신고까지 ${lag ?? '?'}일). 오늘 기준 공시 후 ${daysSinceFiling}일 경과 — ${daysSinceFiling <= 7 ? '가장 신선한 구간입니다.' : daysSinceFiling <= 45 ? '아직 유효 구간이지만 초기 반응은 지났습니다.' : '이미 시장에 충분히 알려진 정보입니다.'}`,
+      text: `거래일 ${latest.transactionDate} → 공시일 ${latestFiling} (신고까지 ${lag ?? '?'}일). ${elapsed} — ${verdict}`,
     });
   }
 
@@ -248,6 +265,7 @@ function buildReasons(ctx) {
 function summarize(scored, signals, today) {
   const lags = scored.map((t) => t.lagDays).filter((v) => v != null);
   const latestFiling = scored.map((t) => t.filingDate).filter(Boolean).sort().at(-1) ?? null;
+  const latestPublishedAt = scored.map((t) => t.publishedAt).filter(Boolean).sort().at(-1) ?? null;
   return {
     today,
     tradeCount: scored.length,
@@ -258,6 +276,8 @@ function summarize(scored, signals, today) {
     avgLagDays: lags.length ? Math.round(lags.reduce((a, b) => a + b, 0) / lags.length) : null,
     maxLagDays: lags.length ? Math.max(...lags) : null,
     latestFilingDate: latestFiling,
+    latestPublishedAt,
+    hoursSincePublished: latestPublishedAt ? Math.round(hoursSince(latestPublishedAt)) : null,
     daysSinceLatestFiling: diffDays(latestFiling, today),
     topBuy: signals.filter((s) => s.net > 0).slice(0, 3).map((s) => s.ticker),
     topSell: signals.filter((s) => s.net < 0).slice(0, 3).map((s) => s.ticker),

@@ -7,6 +7,34 @@ const UA =
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** 헤더까지 필요할 때 쓰는 저수준 버전. 재시도 정책은 fetchRaw와 동일하다. */
+export async function fetchResponse(url, { method = 'GET', headers = {}, body, timeoutMs = 30000, retries = 3 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) await sleep(500 * 2 ** (attempt - 1));
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method,
+        body,
+        signal: ac.signal,
+        headers: { 'user-agent': UA, accept: '*/*', ...headers },
+      });
+      if (!res.ok && (res.status >= 500 || res.status === 429)) {
+        lastErr = new Error(`HTTP ${res.status} ${res.statusText} - ${url}`);
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr ?? new Error(`요청 실패: ${url}`);
+}
+
 export async function fetchRaw(url, { headers = {}, timeoutMs = 30000, retries = 3 } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {

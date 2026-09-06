@@ -1,7 +1,9 @@
 name: Deploy to Cloudflare Workers
 
 # 1) 코드 푸시 → 재배포
-# 2) 매시 정각 → 공시 스냅샷을 새로 굽고 재배포 (하원 사무처 공시는 하루에도 여러 번 올라온다)
+# 2) 30분마다 → 공시 스냅샷을 새로 굽고 재배포
+#    (연도별 ZIP은 평일 하루 한 번꼴로만 갱신되지만, 파이프라인이 사무처 라이브 검색도
+#     함께 조회하므로 신규 공시를 게시 후 30분 안에 잡는다)
 # 3) 수동 실행
 #
 # 필요한 시크릿: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
@@ -10,7 +12,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 concurrency:

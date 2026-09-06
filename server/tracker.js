@@ -1,11 +1,14 @@
 // 공시 인덱스 → PTR PDF → 거래 파싱 → 시세 → 시그널로 이어지는 파이프라인.
 import { DEFAULT_MEMBER, LOOKBACK_DAYS, CLERK } from './config.js';
-import { loadIndex, matchMember, listTraders, fetchPtrPdf, FILING_TYPES } from './clerk.js';
+import {
+  loadIndex, matchMember, listTraders, fetchPtrPdf, FILING_TYPES,
+  searchLiveFilings, fetchPtrPublishedAt,
+} from './clerk.js';
 import { parsePtr } from './ptr.js';
 import { getQuotes } from './prices.js';
 import { composeReport } from '../shared/report.js';
 import { memoized } from './lib/cache.js';
-import { daysAgoISO } from '../shared/util.js';
+import { daysAgoISO, etDate } from '../shared/util.js';
 
 const REPORT_TTL = 15 * 60 * 1000;
 
@@ -42,8 +45,46 @@ export async function buildDataset({ member = DEFAULT_MEMBER, force = false, loo
 
   // PTR(정기 거래 보고서)만 거래 내역을 담고 있다.
   const cutoff = daysAgoISO(lookbackDays + 120);
-  const ptrFilings = mine
-    .filter((f) => f.filingType === 'P' && f.filingDate && f.filingDate >= cutoff)
+  const profile0 = mine[0];
+  const byDoc = new Map();
+  for (const f of mine) {
+    if (f.filingType !== 'P') continue;
+    byDoc.set(f.docId, { ...f, discoveredVia: 'index' });
+  }
+
+  // 연도별 ZIP은 평일 하루 1회 정도만 갱신되므로(주말엔 금요일자 그대로),
+  // 라이브 검색으로 ZIP에 아직 없는 신규 공시를 함께 잡는다.
+  let liveError = null;
+  try {
+    const years = [...new Set(mine.map((f) => f.indexYear))];
+    for (const f of await searchLiveFilings({ last: profile0.last, years })) {
+      if (byDoc.has(f.docId)) continue;
+      byDoc.set(f.docId, {
+        ...f,
+        first: profile0.first,
+        last: profile0.last,
+        prefix: profile0.prefix,
+        filingDate: null, // 게시 시각(Last-Modified)에서 채운다
+        discoveredVia: 'live-search',
+      });
+    }
+  } catch (err) {
+    liveError = String(err.message ?? err);
+  }
+
+  // PDF의 Last-Modified = 공시가 실제로 공개된 시각(분 단위).
+  const candidates = [...byDoc.values()];
+  await mapLimit(candidates, 4, async (f) => {
+    try {
+      f.publishedAt = await fetchPtrPublishedAt(f);
+    } catch {
+      f.publishedAt = null;
+    }
+    if (!f.filingDate && f.publishedAt) f.filingDate = etDate(f.publishedAt);
+  });
+
+  const ptrFilings = candidates
+    .filter((f) => f.filingDate && f.filingDate >= cutoff)
     .sort((a, b) => b.filingDate.localeCompare(a.filingDate))
     .slice(0, 20);
 
@@ -82,6 +123,7 @@ export async function buildDataset({ member = DEFAULT_MEMBER, force = false, loo
       .map((f) => ({ ...f, typeLabel: FILING_TYPES[f.filingType] ?? f.filingType })),
     sources: {
       index: sources,
+      liveSearch: liveError ? { ok: false, error: liveError } : { ok: true, newFilings: candidates.filter((f) => f.discoveredVia === 'live-search').length },
       origin: CLERK.searchUrl,
       note: '원본: 미 하원 사무처(Clerk of the U.S. House) 재무공시 데이터',
     },
