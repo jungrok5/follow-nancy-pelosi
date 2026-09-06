@@ -34,3 +34,13 @@ else ok(`티커 추출 ${withTicker}/${report.transactions.length}건`);
 
 if (!report.signals.every((s) => s.reasons?.length)) fail('근거가 비어 있는 시그널이 있습니다');
 else ok('모든 시그널에 근거 문장 존재');
+
+// 시세가 통째로 비면 '가격 반영도' 감점이 사라져 이미 급등한 종목이
+// '따라 매수'로 잘못 표시된다. 실제로 야후가 CI IP를 429로 막아 발생했던 사고라 고정 검사한다.
+const priced = report.signals.filter((s) => Number.isFinite(s.price));
+if (priced.length < Math.ceil(report.signals.length / 2)) {
+  const why = Object.values(report.quotes).find((q) => q.error)?.error ?? '원인 미상';
+  fail(`시세를 받은 종목이 ${priced.length}/${report.signals.length}개뿐입니다 — ${why}`);
+} else {
+  ok(`시세 조회 ${priced.length}/${report.signals.length}종목 (${Object.values(report.quotes)[0]?.source})`);
+}
