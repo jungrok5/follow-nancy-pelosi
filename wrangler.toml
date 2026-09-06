@@ -1,0 +1,15 @@
+name = "pelosi-tracker"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# 정적 프런트엔드(+ 배포 시점에 구워진 공시 스냅샷)를 그대로 서빙한다.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# 선택: KV를 붙이면 재배포 없이 공시 데이터만 갱신할 수 있다.
+#   npx wrangler kv namespace create TRACKER_KV   → 출력된 id를 아래에 붙여넣고 주석 해제
+# [[kv_namespaces]]
+# binding = "TRACKER_KV"
+# id = "여기에_네임스페이스_ID"

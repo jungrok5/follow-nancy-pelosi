@@ -3,10 +3,10 @@ import { DEFAULT_MEMBER, LOOKBACK_DAYS, CLERK } from './config.js';
 import { loadIndex, matchMember, listTraders, fetchPtrPdf, FILING_TYPES } from './clerk.js';
 import { parsePtr } from './ptr.js';
 import { getQuotes } from './prices.js';
-import { buildSignals } from './signals.js';
+import { composeReport } from '../shared/report.js';
 import { memoized } from './lib/cache.js';
+import { daysAgoISO } from '../shared/util.js';
 
-const DAY = 86400000;
 const REPORT_TTL = 15 * 60 * 1000;
 
 async function mapLimit(items, limit, fn) {
@@ -24,13 +24,14 @@ async function mapLimit(items, limit, fn) {
 }
 
 export async function getReport({ member = DEFAULT_MEMBER, force = false, lookbackDays = LOOKBACK_DAYS } = {}) {
-  const key = `report:${member}:${lookbackDays}`;
-  if (force) return buildReport({ member, force, lookbackDays });
-  return memoized(key, REPORT_TTL, () => buildReport({ member, force, lookbackDays }));
+  const dataset = force
+    ? await buildDataset({ member, force, lookbackDays })
+    : await memoized(`dataset:${member}:${lookbackDays}`, REPORT_TTL, () => buildDataset({ member, lookbackDays }));
+  return composeReport(dataset, { quotesFor: getQuotes, lookbackDays });
 }
 
-async function buildReport({ member, force, lookbackDays }) {
-  const started = Date.now();
+/** 공시 인덱스 → PTR PDF → 거래 레코드까지. (시세·시그널은 포함하지 않는다) */
+export async function buildDataset({ member = DEFAULT_MEMBER, force = false, lookbackDays = LOOKBACK_DAYS } = {}) {
   const { filings, sources } = await loadIndex({ force });
   const mine = matchMember(filings, member);
   if (!mine.length) {
@@ -40,7 +41,7 @@ async function buildReport({ member, force, lookbackDays }) {
   }
 
   // PTR(정기 거래 보고서)만 거래 내역을 담고 있다.
-  const cutoff = new Date(Date.now() - (lookbackDays + 120) * DAY).toISOString().slice(0, 10);
+  const cutoff = daysAgoISO(lookbackDays + 120);
   const ptrFilings = mine
     .filter((f) => f.filingType === 'P' && f.filingDate && f.filingDate >= cutoff)
     .sort((a, b) => b.filingDate.localeCompare(a.filingDate))
@@ -63,13 +64,6 @@ async function buildReport({ member, force, lookbackDays }) {
     .flatMap((p) => p.transactions)
     .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate) || (b.filingDate ?? '').localeCompare(a.filingDate ?? ''));
 
-  const windowStart = new Date(Date.now() - lookbackDays * DAY).toISOString().slice(0, 10);
-  const tickers = [...new Set(transactions.filter((t) => t.ticker && t.transactionDate >= windowStart).map((t) => t.ticker))];
-  const earliest = transactions.filter((t) => t.ticker).map((t) => t.transactionDate).sort()[0] ?? windowStart;
-  const quotes = tickers.length ? await getQuotes(tickers, earliest > windowStart ? windowStart : earliest) : {};
-
-  const { signals, summary } = buildSignals(transactions, quotes, { lookbackDays });
-
   const profile = mine[0];
   return {
     member: {
@@ -78,20 +72,14 @@ async function buildReport({ member, force, lookbackDays }) {
       displayName: `${profile.prefix ? profile.prefix + ' ' : ''}${profile.first} ${profile.last}`.trim(),
       stateDst: profile.stateDst,
     },
-    generatedAt: new Date().toISOString(),
-    elapsedMs: Date.now() - started,
+    builtAt: new Date().toISOString(),
     lookbackDays,
-    summary,
-    signals,
     transactions,
     filings: parsed.map((p) => p.filing),
     otherFilings: mine
       .filter((f) => f.filingType !== 'P')
       .slice(0, 10)
       .map((f) => ({ ...f, typeLabel: FILING_TYPES[f.filingType] ?? f.filingType })),
-    quotes: Object.fromEntries(
-      Object.entries(quotes).map(([t, q]) => [t, { price: q.price, currency: q.currency, source: q.source, asOf: q.asOf, error: q.error ?? null, name: q.name ?? null }]),
-    ),
     sources: {
       index: sources,
       origin: CLERK.searchUrl,

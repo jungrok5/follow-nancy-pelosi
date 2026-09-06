@@ -89,6 +89,66 @@ Yahoo Finance(실패 시 Stooq) 일봉/현재가  →  시그널 엔진  →  /a
 }
 ```
 
+## Cloudflare 배포 (자동 배포 포함)
+
+**결론: 가능합니다. 단, 앱을 그대로 올릴 수는 없어서 무거운 부분과 가벼운 부분을 나눴습니다.**
+
+Cloudflare Workers 런타임(workerd)에서는 `pdfjs-dist`가 모듈 초기화 단계에서 실패합니다
+(`TypeError: Cannot set properties of undefined (setting '_isSameOrigin')` — legacy/일반 빌드 모두).
+게다가 무료 플랜은 요청당 CPU 10ms 제한이라, PDF 여러 개를 파싱하는 작업 자체가 맞지 않습니다.
+그래서 **PDF 파싱만 GitHub Actions로 빼고, 나머지는 Worker에서 실행**합니다.
+
+```
+GitHub Actions (매시 정각)                       Cloudflare Worker (요청 시)
+┌────────────────────────────┐                 ┌──────────────────────────────┐
+│ 사무처 ZIP → PTR PDF 파싱   │  snapshot.json  │ 스냅샷 로드 (KV → assets)     │
+│ npm run build:data         │ ──────────────▶ │ + 야후 실시간 시세 조회        │
+│ wrangler deploy            │                 │ + 시그널 재계산 → /api/report │
+└────────────────────────────┘                 └──────────────────────────────┘
+```
+
+- **주가는 항상 실시간**입니다. 시세 조회와 시그널 계산은 요청 시점에 Worker가 수행합니다
+  (네트워크 대기는 Workers CPU 시간에 산정되지 않고, 시그널 계산은 수 ms 수준이라 무료 플랜으로 충분).
+- **공시 데이터는 크론 주기**(기본 1시간)로 갱신됩니다. 원본 공시가 하루 단위로 올라오므로 실질적인 손실은 없습니다.
+- 리포트 응답은 엣지에서 5분 캐시하고, `?refresh=1`로 우회할 수 있습니다.
+
+### 1) 수동 배포
+
+```bash
+npx wrangler login
+npm run cf:deploy      # = build:data + wrangler deploy
+```
+
+`https://pelosi-tracker.<계정>.workers.dev` 로 뜹니다. 커스텀 도메인은 Cloudflare 대시보드에서 연결하세요.
+
+### 2) 자동 배포 (GitHub Actions)
+
+`.github/workflows/deploy.yml`이 **푸시 · 매시 정각 · 수동 실행** 세 가지로 동작합니다.
+저장소 Settings → Secrets and variables → Actions 에 두 개만 넣으면 끝입니다.
+
+| 시크릿 | 얻는 곳 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare 대시보드 → My Profile → API Tokens → **Edit Cloudflare Workers** 템플릿 |
+| `CLOUDFLARE_ACCOUNT_ID` | Workers & Pages 개요 페이지 우측 |
+| `KV_NAMESPACE_ID` *(선택)* | `npx wrangler kv namespace create TRACKER_KV` 출력값 |
+
+> 스케줄 트리거는 **기본 브랜치(main)에 워크플로 파일이 있어야** 동작합니다. 브랜치에 머지한 뒤부터 크론이 돕니다.
+
+`KV_NAMESPACE_ID`를 넣고 `wrangler.toml`의 `[[kv_namespaces]]` 주석을 풀면, 공시 갱신 때
+**재배포 없이 KV만 업데이트**됩니다(배포 횟수를 아끼고 롤백 위험도 줄어듭니다). 없으면 배포에 포함된
+`public/data/snapshot.json`을 그대로 사용합니다.
+
+### 3) Node 서버를 그대로 올리고 싶다면
+
+Worker로 나누는 게 싫다면 PDF 파싱까지 한 프로세스에서 도는 원본 구조 그대로
+Fly.io · Render · Railway · 일반 VPS(도커 없이 `npm start`)에 올리면 됩니다.
+Cloudflare 안에서 굳이 한다면 Workers 대신 **Cloudflare Containers**(유료)를 써야 합니다.
+
+### 비용
+
+무료 플랜으로 충분합니다 — Workers 10만 요청/일, KV 10만 읽기·1천 쓰기/일(크론 24회 사용),
+GitHub Actions 퍼블릭 저장소 무료(프라이빗이면 1회 실행 ≈ 1분).
+
 ## 한계와 주의
 
 - **최대 45일의 신고 지연**이 구조적 한계입니다. 공시를 본 시점엔 이미 주가가 움직였을 수 있어,
@@ -101,13 +161,28 @@ Yahoo Finance(실패 시 Stooq) 일봉/현재가  →  시그널 엔진  →  /a
 ## 구조
 
 ```
-server/
+server/         Node 런타임 (로컬 개발 / 자체 호스팅 / 스냅샷 빌드)
   index.js     HTTP 서버 + 정적 파일 + /api
   tracker.js   인덱스 → PDF → 파싱 → 시세 → 시그널 파이프라인
   clerk.js     하원 사무처 공시 인덱스/PDF
   ptr.js       PTR PDF → 거래 레코드 파서
-  prices.js    시세(Yahoo → Stooq 폴백)
-  signals.js   시그널 점수·행동안·근거 문장 생성
+  prices.js    시세 캐시 계층
   lib/         http 재시도, 디스크 캐시, 최소 ZIP 리더
-public/        정적 프런트엔드(바닐라 JS)
+shared/         Node·Workers 공용 (런타임 의존성 없음)
+  signals.js   시그널 점수·행동안·근거 문장 생성
+  quotes.js    시세(Yahoo → Stooq 폴백), fetch만 사용
+  report.js    데이터셋 + 시세 → 최종 리포트
+  util.js      날짜/포맷 유틸
+worker/         Cloudflare Worker 엔트리
+scripts/
+  build-data.js  공시 스냅샷 빌드(GitHub Actions에서 실행)
+  smoke-test.js  원본 호출까지 포함한 최소 검증
+public/        정적 프런트엔드(바닐라 JS) + data/snapshot.json
+```
+
+## 로컬에서 Worker 버전 확인
+
+```bash
+npm run build:data     # 스냅샷 굽기
+npm run cf:dev         # workerd 로컬 실행 (http://localhost:8787)
 ```

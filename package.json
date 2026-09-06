@@ -6,11 +6,19 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "dev": "node --watch server/index.js",
+    "build:data": "node scripts/build-data.js",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "npm run build:data && wrangler deploy"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "pdfjs-dist": "^4.10.38"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.42.0"
+  }
 }

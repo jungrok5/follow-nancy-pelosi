@@ -1,6 +1,8 @@
 // PTR(정기 거래 보고서) PDF → 거래 레코드 파서.
 // 사무처 PDF는 표 형태라 텍스트 아이템을 y좌표로 묶어 줄을 복원한 뒤,
 // "소유자 | 자산명 | 거래유형 | 거래일 | 통지일 | 금액구간" 패턴으로 블록을 잘라낸다.
+import { diffDays } from '../shared/util.js';
+
 let pdfjsPromise;
 const loadPdfjs = () => (pdfjsPromise ??= import('pdfjs-dist/legacy/build/pdf.mjs'));
 
@@ -228,9 +230,4 @@ function toTransaction(block, filing) {
     lagDays: diffDays(transactionDate, filing.filingDate),
     raw: block.raw.join('\n'),
   };
-}
-
-export function diffDays(fromISO, toISO_) {
-  if (!fromISO || !toISO_) return null;
-  return Math.round((Date.parse(toISO_) - Date.parse(fromISO)) / 86400000);
 }

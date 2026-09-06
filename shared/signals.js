@@ -1,14 +1,8 @@
 // 매매 시그널 엔진.
 // "공시 코드 그대로" 보여주는 대신, 거래의 실질(콜옵션 신규매수 / 행사 / 기부 / 실매도)과
 // 규모·신고지연·공시 이후 주가 반영도를 함께 계산해 행동안과 근거를 만든다.
-import { closeOn, pctChange } from './prices.js';
-import { diffDays } from './ptr.js';
-
-const DAY = 86400000;
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const fmtUSD = (n) => (Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—');
-const fmtPct = (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(1)}%` : '—');
+import { closeOn, pctChange } from './quotes.js';
+import { clamp, daysAgoISO, diffDays, fmtPct, fmtUSD, todayISO } from './util.js';
 
 /** 거래 성격별 가중치. 콜옵션 신규 매수가 가장 강한 확신 신호로 본다. */
 const KIND_WEIGHT = {
@@ -83,7 +77,7 @@ const PLAYBOOK = {
 
 /** 티커별로 거래를 묶어 시그널을 만든다. */
 export function buildSignals(transactions, quotes = {}, { today = todayISO(), lookbackDays = 400 } = {}) {
-  const cutoff = new Date(Date.now() - lookbackDays * DAY).toISOString().slice(0, 10);
+  const cutoff = daysAgoISO(lookbackDays);
   const scored = transactions
     .filter((t) => t.ticker && t.transactionDate >= cutoff)
     .map((t) => scoreTrade(t, today));
