@@ -8,11 +8,14 @@
 
 <p align="center"><em>매매 시그널 · 오늘의 결론 · 전체 거래 내역 · 원본 PDF 링크</em></p>
 
-## 실행
+## 로컬에서 돌려보기
+
+배포에는 필요 없습니다(웹 화면만으로 배포됩니다). 직접 고쳐볼 때만 쓰세요.
 
 ```bash
 npm install
-npm start          # http://localhost:3000
+npm start              # http://localhost:3000 — 파싱·시세·시그널 전부 서버에서 처리
+npm run build:data     # 정적 배포용 snapshot.json / report.json 생성
 ```
 
 환경변수(전부 선택):
@@ -89,70 +92,33 @@ Yahoo Finance(실패 시 Stooq) 일봉/현재가  →  시그널 엔진  →  /a
 }
 ```
 
-## Cloudflare 배포 (자동 배포 포함)
+## 배포
 
-**결론: 가능합니다. 단, 앱을 그대로 올릴 수는 없어서 무거운 부분과 가벼운 부분을 나눴습니다.**
+**GitHub Pages 하나로 끝납니다** — 시크릿도, 로컬 명령도, 카드도 필요 없습니다.
 
-Cloudflare Workers 런타임(workerd)에서는 `pdfjs-dist`가 모듈 초기화 단계에서 실패합니다
-(`TypeError: Cannot set properties of undefined (setting '_isSameOrigin')` — legacy/일반 빌드 모두).
-게다가 무료 플랜은 요청당 CPU 10ms 제한이라, PDF 여러 개를 파싱하는 작업 자체가 맞지 않습니다.
-그래서 **PDF 파싱만 GitHub Actions로 빼고, 나머지는 Worker에서 실행**합니다.
+1. 저장소를 퍼블릭으로 전환
+2. **Settings → Pages → Source: `GitHub Actions`**
+3. **Actions → Deploy to GitHub Pages → Run workflow**
+
+`https://<계정>.github.io/follow-nancy-pelosi/` 로 뜨고, 이후 **30분마다** 공시를 다시 파싱해 자동 재배포됩니다.
+클릭 단위 안내는 [docs/DEPLOY.md](docs/DEPLOY.md)에 있습니다.
 
 ```
-GitHub Actions (매시 정각)                       Cloudflare Worker (요청 시)
-┌────────────────────────────┐                 ┌──────────────────────────────┐
-│ 사무처 ZIP → PTR PDF 파싱   │  snapshot.json  │ 스냅샷 로드 (KV → assets)     │
-│ npm run build:data         │ ──────────────▶ │ + 야후 실시간 시세 조회        │
-│ wrangler deploy            │                 │ + 시그널 재계산 → /api/report │
-└────────────────────────────┘                 └──────────────────────────────┘
+GitHub Actions (30분마다)                     GitHub Pages
+┌──────────────────────────────┐            ┌─────────────────────┐
+│ 사무처 ZIP + 라이브 검색 조회  │  정적 파일  │ index.html          │
+│ PTR PDF 파싱 → 거래 레코드    │ ─────────▶ │ data/report.json    │
+│ 시세 조회 → 시그널 계산       │            │ (서버 없음)          │
+└──────────────────────────────┘            └─────────────────────┘
 ```
 
-- **주가는 항상 실시간**입니다. 시세 조회와 시그널 계산은 요청 시점에 Worker가 수행합니다
-  (네트워크 대기는 Workers CPU 시간에 산정되지 않고, 시그널 계산은 수 ms 수준이라 무료 플랜으로 충분).
-- **공시 데이터는 크론 주기**(기본 1시간)로 갱신됩니다. 원본 공시가 하루 단위로 올라오므로 실질적인 손실은 없습니다.
-- 리포트 응답은 엣지에서 5분 캐시하고, `?refresh=1`로 우회할 수 있습니다.
+PDF 파싱은 브라우저에서도 서버리스 런타임에서도 돌릴 수 없어 빌드 단계로 뺐고,
+시세는 브라우저에서 직접 부르면 CORS에 막히므로 함께 구워둡니다.
+그래서 **주가는 최대 30분(빌드 주기) 지연**됩니다.
 
-### 1) 수동 배포
-
-```bash
-npx wrangler login
-npm run cf:deploy      # = build:data + wrangler deploy
-```
-
-`https://follow-nancy-pelosi.<계정>.workers.dev` 로 뜹니다. 커스텀 도메인은 Cloudflare 대시보드에서 연결하세요.
-
-> 📄 **클릭 단위 상세 가이드(퍼블릭 전환 안전 점검 + Cloudflare 값 발급 위치)는 [docs/DEPLOY.md](docs/DEPLOY.md)에 있습니다.**
-
-### 2) 자동 배포 (GitHub Actions)
-
-`.github/workflows/deploy.yml`이 **푸시 · 매시 정각 · 수동 실행** 세 가지로 동작합니다.
-저장소 Settings → Secrets and variables → Actions 에 두 개만 넣으면 끝입니다.
-
-| 시크릿 | 얻는 곳 |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare 대시보드 → My Profile → API Tokens → **Edit Cloudflare Workers** 템플릿 |
-| `CLOUDFLARE_ACCOUNT_ID` | Workers & Pages 개요 페이지 우측 |
-| `KV_NAMESPACE_ID` *(선택)* | `npx wrangler kv namespace create TRACKER_KV` 출력값 |
-
-> 스케줄 트리거는 **기본 브랜치(main)에 워크플로 파일이 있어야** 동작합니다. 브랜치에 머지한 뒤부터 크론이 돕니다.
-
-`KV_NAMESPACE_ID`를 넣고 `wrangler.toml`의 `[[kv_namespaces]]` 주석을 풀면, 공시 갱신 때
-**재배포 없이 KV만 업데이트**됩니다(배포 횟수를 아끼고 롤백 위험도 줄어듭니다). 없으면 배포에 포함된
-`public/data/snapshot.json`을 그대로 사용합니다.
-
-### 3) Node 서버를 그대로 올리고 싶다면
-
-Worker로 나누는 게 싫다면 PDF 파싱까지 한 프로세스에서 도는 원본 구조 그대로
-Fly.io · Render · Railway · 일반 VPS(도커 없이 `npm start`)에 올리면 됩니다.
-Cloudflare 안에서 굳이 한다면 Workers 대신 **Cloudflare Containers**(유료)를 써야 합니다.
-
-### 비용
-
-무료 플랜으로 충분합니다 — Workers 10만 요청/일, KV 10만 읽기·1천 쓰기/일(크론 24회 사용),
-GitHub Actions는 **퍼블릭 저장소면 분 소모가 아예 없고**, 프라이빗이면 무료 플랜 2,000분/월을 씁니다
-(이 워크플로 1회 ≈ 1~2분이므로 30분 크론이면 월 1,400~2,800분 → 프라이빗에서는 한도를 넘길 수 있습니다.
-프라이빗을 유지하려면 크론을 2~3시간 간격으로 늘리거나, 배포 대신 KV 갱신만 하도록 바꾸세요).
-참고로 스케줄 워크플로는 저장소에 60일간 활동이 없으면 자동으로 비활성화됩니다.
+주가를 요청 시점 실시간으로 받고 다른 의원까지 조회하려면 Cloudflare Workers로 옮길 수 있습니다
+(시크릿 2개, 역시 로컬 작업 없음). 저장소에 `worker/`와 `wrangler.toml`이 준비되어 있고
+절차는 [docs/cloudflare/README.md](docs/cloudflare/README.md)에 있습니다.
 
 ## 얼마나 실시간인가
 
@@ -162,8 +128,8 @@ GitHub Actions는 **퍼블릭 저장소면 분 소모가 아예 없고**, 프라
 | --- | --- | --- |
 | ① 거래 → 공시 제출 | 펠로시 실측 **평균 21일, 최대 30일** (법정 한도 45일) | **불가능.** STOCK Act가 정한 신고 기한이라 어떤 사이트도 못 줄입니다 |
 | ② 공시 게시 → 데이터 반영 | **≤ 30분** (크론 주기) | 크론 주기를 줄이면 더 짧아짐 |
-| ③ 데이터 → 화면 | 엣지 캐시 5분 (`?refresh=1`로 우회) | 즉시 |
-| ④ 주가 | **요청 시점 실시간** | — |
+| ③ 데이터 → 화면 | 즉시 (정적 파일) | — |
+| ④ 주가 | 빌드 시점 기준, **최대 30분 지연** | Cloudflare Workers로 옮기면 요청 시점 실시간 |
 
 ②가 이 프로젝트에서 실제로 개선한 부분입니다. 대부분의 트래커는 사무처의 연도별 `FD.ZIP` 인덱스만 보는데,
 이 파일은 **평일에 하루 한 번꼴로만 다시 만들어집니다**(예: 일요일에 확인하면 금요일 13:00 UTC 판이 최신).
@@ -181,10 +147,10 @@ GitHub Actions는 **퍼블릭 저장소면 분 소모가 아예 없고**, 프라
 
 ### 더 빠르게 만들려면
 
-- `deploy.yml`의 크론을 `*/10 * * * *`로 (퍼블릭 저장소는 Actions 분이 무제한). 단 매번 재배포하지 않도록
-  `KV_NAMESPACE_ID`를 설정해 KV만 갱신하는 편이 좋습니다.
-- 새 공시를 감지했을 때 알림(Slack/Telegram/이메일)을 워크플로 마지막 단계에 추가.
-  `sources.liveSearch.newFilings > 0` 이면 새 문서가 잡힌 것입니다.
+- `.github/workflows/pages.yml`의 크론을 `*/10 * * * *`로 줄입니다(퍼블릭 저장소는 Actions 분이 무제한).
+- 새 공시를 감지했을 때 알림(Slack/Telegram/이메일)을 워크플로 마지막 단계에 추가하세요.
+  리포트의 `sources.liveSearch.newFilings > 0` 이면 새 문서가 잡힌 것입니다.
+- 주가만 실시간이 필요하면 Cloudflare Workers 배포로 옮기면 됩니다([docs/cloudflare/README.md](docs/cloudflare/README.md)).
 
 ## 한계와 주의
 
@@ -211,16 +177,13 @@ shared/         Node·Workers 공용 (런타임 의존성 없음)
   quotes.js    시세(Yahoo → Stooq 폴백), fetch만 사용
   report.js    데이터셋 + 시세 → 최종 리포트
   util.js      날짜/포맷 유틸
-worker/         Cloudflare Worker 엔트리
+worker/         (선택) Cloudflare Worker 엔트리 — Pages 배포에서는 쓰이지 않음
 scripts/
-  build-data.js  공시 스냅샷 빌드(GitHub Actions에서 실행)
+  build-data.js  공시 파싱 → snapshot.json(데이터) + report.json(시세·시그널 포함)
   smoke-test.js  원본 호출까지 포함한 최소 검증
-public/        정적 프런트엔드(바닐라 JS) + data/snapshot.json
-```
-
-## 로컬에서 Worker 버전 확인
-
-```bash
-npm run build:data     # 스냅샷 굽기
-npm run cf:dev         # workerd 로컬 실행 (http://localhost:8787)
+public/        정적 프런트엔드(바닐라 JS) + data/
+.github/workflows/
+  pages.yml      30분마다 데이터 빌드 후 GitHub Pages 배포
+  ci.yml         문법 검사 + 파이프라인 스모크 테스트
+docs/cloudflare/ (선택) Cloudflare Workers 배포용 워크플로와 안내
 ```

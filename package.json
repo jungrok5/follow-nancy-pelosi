@@ -8,8 +8,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "build:data": "node scripts/build-data.js",
-    "cf:dev": "wrangler dev",
-    "cf:deploy": "npm run build:data && wrangler deploy"
+    "cf:dev": "npx wrangler dev",
+    "cf:deploy": "npm run build:data && npx wrangler deploy"
   },
   "engines": {
     "node": ">=18"
@@ -17,8 +17,5 @@
   "dependencies": {
     "pdfjs-dist": "^4.10.38"
   },
-  "license": "MIT",
-  "devDependencies": {
-    "wrangler": "^4.42.0"
-  }
+  "license": "MIT"
 }

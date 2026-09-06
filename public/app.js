@@ -8,6 +8,9 @@ const el = (tag, props = {}, children = []) => {
 
 const state = { report: null, filter: 'ALL', query: '', timer: null };
 
+/** GitHub Pages처럼 하위 경로(/repo-name/)에 배포돼도 동작하도록 상대 경로로 푼다. */
+const rel = (path) => new URL(path, document.baseURI).toString();
+
 /** 표 셀. data-label은 모바일 카드형 레이아웃에서 항목 이름으로 쓰인다. */
 const cell = ({ className = '', label, text, children }) => {
   const td = el('td', { className }, children ?? (text != null ? [text] : []));
@@ -46,23 +49,48 @@ const FILTERS = [
   ['WATCH', '관망'],
 ];
 
+/**
+ * 서버(Node/Worker)가 있으면 /api/report로 실시간 시세까지 계산해 받고,
+ * 정적 호스팅(GitHub Pages 등)이면 빌드 시점에 구워둔 report.json으로 대체한다.
+ */
+async function fetchReport(member, refresh) {
+  let apiError = null;
+  try {
+    const res = await fetch(rel(`api/report?member=${encodeURIComponent(member)}${refresh ? '&refresh=1' : ''}`));
+    if (res.ok) return await res.json();
+    apiError = new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+  } catch (err) {
+    apiError = err; // 정적 호스팅에서는 /api/report가 없어 여기로 온다
+  }
+
+  const res = await fetch(rel('data/report.json'), { cache: 'no-cache' });
+  if (!res.ok) throw apiError ?? new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  data.staticFallback = true;
+  return data;
+}
+
 async function load({ refresh = false } = {}) {
   const member = $('#member').value.trim() || 'Pelosi, Nancy';
   const btn = $('#refresh');
   btn.disabled = true;
   setStatus(refresh ? '하원 사무처에서 최신 공시를 다시 받아오는 중…' : '공시 데이터를 불러오는 중…');
   try {
-    const res = await fetch(`/api/report?member=${encodeURIComponent(member)}${refresh ? '&refresh=1' : ''}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    const data = await fetchReport(member, refresh);
     state.report = data;
     render();
+    if (isStatic(data) && normalizeName(member) !== normalizeName(data.member?.query ?? '')) {
+      setStatus(`이 배포는 정적 페이지라 '${data.member.displayName}' 데이터만 들어 있습니다. 다른 의원을 보려면 서버 배포(Cloudflare Workers 또는 npm start)가 필요합니다.`, true);
+    }
   } catch (err) {
     setStatus(`불러오지 못했습니다: ${err.message}`, true);
   } finally {
     btn.disabled = false;
   }
 }
+
+const isStatic = (r) => Boolean(r?.staticFallback || r?.deployment?.mode === 'static');
+const normalizeName = (s) => String(s).toLowerCase().replace(/[^a-z]/g, '');
 
 function setStatus(text, isError = false) {
   const node = $('#status');
@@ -77,7 +105,8 @@ function render() {
   setStatus(
     `${r.member.displayName} (${r.member.stateDst}) · 최근 공시 ${r.summary.latestFilingDate ?? '없음'}` +
     `${stale != null ? ` (${stale}일 전)` : ''} · 공시 문서 ${r.filings.length}건에서 거래 ${r.transactions.length}건 파싱 · ` +
-    `갱신 ${new Date(r.generatedAt).toLocaleString('ko-KR')}`,
+    `갱신 ${new Date(r.generatedAt).toLocaleString('ko-KR')}` +
+    (isStatic(r) ? ' · 정적 배포(시세는 빌드 시점 기준)' : ''),
   );
   renderFreshness(r);
   renderSummary(r);
@@ -106,7 +135,10 @@ function renderFreshness(r) {
     { k: '② 공시 → 이 사이트 인지', v: collectedAgo < 90 ? `${collectedAgo}분 전 수집` : `${Math.round(collectedAgo / 60)}시간 전 수집`,
       s: live?.ok ? '사무처 ZIP 인덱스 + 실시간 검색 병행' : 'ZIP 인덱스 기준(실시간 검색 실패)', dot: collectedAgo < 120 ? '' : 'warm' },
     { k: '③ 최근 공시 게시 시각', v: publishedText, s: elapsed, dot },
-    { k: '④ 주가', v: '요청 시점 실시간', s: Object.values(r.quotes ?? {})[0]?.source ?? '시세 소스 없음', dot: '' },
+    isStatic(r)
+      ? { k: '④ 주가', v: `빌드 시점 (${collectedAgo < 90 ? `${collectedAgo}분` : `${Math.round(collectedAgo / 60)}시간`} 전)`,
+          s: '정적 배포 — 시세는 갱신 주기마다 다시 구워집니다', dot: collectedAgo < 60 ? 'warm' : 'cold' }
+      : { k: '④ 주가', v: '요청 시점 실시간', s: Object.values(r.quotes ?? {})[0]?.source ?? '시세 소스 없음', dot: '' },
   ];
 
   $('#freshness').hidden = false;
@@ -299,7 +331,8 @@ function renderFilings(r) {
 
 async function loadTraders() {
   try {
-    const { traders } = await (await fetch('/api/traders')).json();
+    const res = await fetch(rel('api/traders'));
+    const { traders } = res.ok ? await res.json() : { traders: state.report?.traders ?? [] };
     $('#traders').replaceChildren(
       ...traders.slice(0, 200).map((t) =>
         el('option', { value: t.name, label: `${t.name} · ${t.stateDst} · PTR ${t.ptrCount}건` }),

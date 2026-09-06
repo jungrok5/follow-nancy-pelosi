@@ -1,248 +1,151 @@
-# 배포 가이드 — 퍼블릭 전환 + Cloudflare 연결
+# 배포 가이드 — GitHub Pages (로컬 작업 없음)
 
-이 문서 하나만 따라 하면 됩니다. 순서대로 **① 안전 점검 → ② 값 3개 발급 → ③ GitHub에 등록 → ④ 배포 확인**.
+**이 저장소는 GitHub 웹 화면만으로 배포됩니다.** 터미널·로컬 설치·API 키가 전혀 필요 없습니다.
+
+- 시크릿 등록: **0개**
+- 로컬 명령: **0개**
+- 비용: **0원** (퍼블릭 저장소면 Actions 분도 무제한)
+
+| 단계 | 어디서 | 걸리는 시간 |
+| --- | --- | --- |
+| ① 저장소 퍼블릭 전환 | GitHub Settings | 1분 |
+| ② Pages 켜기 | GitHub Settings → Pages | 30초 |
+| ③ 브랜치 머지 | GitHub PR 화면 | 1분 |
+| ④ 첫 배포 실행 | GitHub Actions 탭 | 2분 |
 
 ---
 
-## ① 퍼블릭으로 바꾸기 전 안전 점검
+## ① 저장소를 퍼블릭으로
 
-퍼블릭 저장소는 GitHub Actions 분이 소모되지 않지만, **한 번 공개된 커밋은 지워도 캐시·포크로 남습니다.**
-전환 전에 아래를 확인하세요.
+퍼블릭이면 Actions 분이 소모되지 않고, GitHub Pages도 무료로 켜집니다.
 
-### 1. 비밀값이 커밋에 섞여 있지 않은지 확인
+### 먼저 비밀값 점검
 
-단어가 아니라 **값처럼 생긴 문자열**을 찾습니다. (`${{ secrets.NAME }}` 같은 *참조*는 비밀값이 아니라 정상입니다)
+이 프로젝트는 **API 키를 하나도 쓰지 않습니다**(하원 사무처·야후 모두 공개 엔드포인트).
+그래도 습관적으로 한 번 확인하세요. 단어가 아니라 *값처럼 생긴 문자열*을 찾습니다.
 
 ```bash
-# 과거 커밋 전체에서 "키 = 긴 문자열" 형태 검색
 git grep -InE '(api[_-]?key|secret|token|password)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9/_+=.-]{24,}' \
   $(git rev-list --all) -- . | grep -v 'secrets\.'
-
-# 개인키 파일이 섞여 들어갔는지
 git grep -InE 'BEGIN [A-Z ]*PRIVATE KEY' $(git rev-list --all) -- .
 ```
 
-둘 다 출력이 없으면 깨끗합니다. **이 저장소는 현재 둘 다 비어 있습니다.**
+둘 다 출력이 없으면 깨끗합니다. **현재 이 저장소는 둘 다 비어 있습니다.**
+(터미널을 열기 싫으면 건너뛰어도 됩니다. 이 저장소에 넣은 비밀값이 없다는 건 위에서 확인했습니다.)
 
-무언가 나온다면 퍼블릭 전환을 멈추고, ① 해당 키를 발급처에서 먼저 폐기(rotate)한 뒤
-② `git filter-repo`로 히스토리에서 제거하세요. 지운 뒤에도 그 키는 죽은 것으로 취급해야 합니다.
+### 전환
 
-전환 후에는 GitHub의 자동 감시도 켜두세요 — 퍼블릭 저장소는 무료입니다.
-**Settings → Code security → Secret scanning**과 **Push protection**을 모두 Enable 하면,
-실수로 토큰을 커밋해도 푸시 단계에서 막아줍니다.
+**Settings → General → 맨 아래 Danger Zone → Change repository visibility → Make public**
 
-### 2. 무시 목록 확인
+전환 후 **Settings → Code security**에서 **Secret scanning**과 **Push protection**을 켜두면,
+나중에 실수로 토큰을 커밋해도 푸시 단계에서 막아줍니다. 퍼블릭 저장소는 무료입니다.
 
-`.gitignore`에 아래가 들어 있어야 합니다 (이미 설정되어 있습니다).
+---
+
+## ② GitHub Pages 켜기
+
+**Settings → Pages → Build and deployment → Source** 를 **`GitHub Actions`** 로 선택합니다.
+
+> "Deploy from a branch"가 아니라 **GitHub Actions**여야 합니다. 이 저장소는 매번 공시를 새로 파싱해
+> 정적 파일을 만들어 올리기 때문입니다.
+
+선택만 하면 됩니다. 브랜치나 폴더는 고르지 않습니다.
+
+---
+
+## ③ 작업 브랜치를 `main`에 머지
+
+스케줄(크론)은 **기본 브랜치에 있는 워크플로만** 실행합니다. 웹에서 머지하면 됩니다.
+
+1. 저장소 상단 **Pull requests → New pull request**
+2. base: `main` ← compare: `claude/pelosi-stock-tracker-cvsl96`
+3. **Create pull request → Merge pull request**
+
+---
+
+## ④ 첫 배포 실행
+
+**Actions 탭 → 왼쪽에서 `Deploy to GitHub Pages` → 우측 `Run workflow` → 초록 버튼**
+
+2분쯤 뒤 초록 체크가 뜨면 끝입니다. 주소는 두 곳에서 확인할 수 있습니다.
+
+- **Settings → Pages** 상단에 표시되는 주소
+- 실행된 워크플로의 `deploy` 단계 출력
+
+보통 이 형태입니다:
 
 ```
-node_modules/
-.cache/          # 다운로드 캐시
-.wrangler/       # wrangler 로컬 상태
-.env
+https://jungrok5.github.io/follow-nancy-pelosi/
 ```
 
-추가로 Cloudflare 로컬 개발용 변수 파일을 쓸 계획이면 `.dev.vars`도 넣으세요.
+---
 
-### 3. 공개해도 되는 값 / 안 되는 값
+## ⑤ 이후 자동 갱신
 
-| 값 | 공개 가능? | 어디에 둘까 |
+`pages.yml`이 아래 세 경우에 자동으로 돕니다.
+
+- **30분마다** — 공시를 다시 파싱하고 시세를 새로 받아 재배포
+- **main에 푸시할 때**
+- **Run workflow 수동 실행**
+
+> ⚠️ 저장소에 **60일간 아무 활동이 없으면 GitHub이 스케줄을 자동 중지**합니다.
+> 그때는 아무 커밋이나 하나 넣거나 Run workflow를 한 번 누르면 다시 시작됩니다.
+
+### 잘 도는지 확인하는 법
+
+사이트 상단의 **신선도 스트립** 두 번째 칸(`② 공시 → 이 사이트 인지`)에
+`N분 전 수집`이 표시됩니다. 30분 안쪽이면 정상입니다.
+
+---
+
+## 이 구성의 한 가지 한계
+
+GitHub Pages는 정적 호스팅이라 **서버가 없습니다.** 그래서:
+
+| | GitHub Pages (지금) | Cloudflare Workers (선택) |
 | --- | --- | --- |
-| `wrangler.toml`의 워커 이름, `compatibility_date` | ✅ 공개 무관 | 저장소 |
-| KV 네임스페이스 ID | ✅ 식별자일 뿐, 이것만으론 접근 불가 | 저장소 또는 시크릿(취향) |
-| Cloudflare **Account ID** | ⚠️ 비밀은 아니지만 굳이 공개할 이유 없음 | **GitHub Secret** |
-| Cloudflare **API Token** | ❌ 절대 공개 금지 | **GitHub Secret** |
-| `wrangler login` 자격증명 (`~/.config/.wrangler/`) | ❌ | 로컬에만, 저장소에 복사 금지 |
+| 공시 데이터 | 30분마다 갱신 | 30분마다 갱신 |
+| **주가** | **빌드 시점 기준 (최대 30분 지연)** | 요청 시점 실시간 |
+| 다른 의원 조회 | ❌ 기본 대상(펠로시)만 | ✅ 이름 입력으로 조회 |
+| 필요한 시크릿 | 없음 | 2개 |
+| 로컬 작업 | 없음 | 없음 |
 
-이 저장소는 API 키 없이 동작합니다(하원 사무처·야후 모두 공개 엔드포인트). 그래서 **코드에 넣을 비밀값이 아예 없습니다.**
-Cloudflare 자격증명은 오직 GitHub Secrets에만 들어갑니다.
-
-### 4. 퍼블릭 전환
-
-저장소 → **Settings → General → 맨 아래 Danger Zone → Change repository visibility → Make public**
-
-### 5. 전환 직후 Actions 설정 점검
-
-**Settings → Actions → General** 한 화면에서 아래 네 가지를 확인합니다.
-대부분 GitHub 기본값이 이미 안전한 쪽이라, 실제로 바꿀 것은 많아야 하나입니다.
-
-| 항목 | 기본값 | 이 프로젝트에 필요한 값 |
-| --- | --- | --- |
-| **Workflow permissions** | `Read repository contents and packages permissions` | **그대로.** 이 워크플로들은 저장소에 쓰기를 하지 않습니다 |
-| Allow GitHub Actions to create and approve pull requests | 해제 | **그대로 해제** |
-| **Actions permissions** | `Allow all actions and reusable workflows` | 그대로 두면 동작합니다 (아래 선택 사항 참고) |
-| **Fork pull request workflows** | `Require approval for first-time contributors` | 퍼블릭이면 `Require approval for all external contributors`로 올리는 것을 권장 |
-
-마지막 항목만 부연하면 — 기본값은 *한 번이라도 머지된 적 있는 기여자*의 PR은 승인 없이 워크플로가 도는 설정입니다.
-`all external contributors`로 올리면 내 저장소 멤버가 아닌 모든 사람의 PR이 매번 수동 승인을 거칩니다.
-개인 프로젝트라면 올려두는 편이 낫고, 외부 기여를 자주 받을 생각이면 기본값이 편합니다.
-
-> 어느 쪽이든 **포크 PR에는 GitHub이 시크릿을 절대 넘기지 않습니다.** 게다가 배포 워크플로(`deploy.yml`)는
-> `push`/`schedule`/`workflow_dispatch`만 쓰고 `pull_request`를 쓰지 않으므로, 남이 PR로 배포를 유발할 수 없습니다.
-> CI 워크플로(`ci.yml`)는 `pull_request`를 쓰지만 시크릿을 전혀 사용하지 않습니다.
-
-### 6. (선택) 공급망 리스크까지 줄이려면
-
-`Actions permissions`를 `Allow <계정>, and select non-<계정>, actions and reusable workflows`로 바꾸고
-허용 목록에 이 저장소가 쓰는 것만 넣습니다.
-
-```
-actions/*, cloudflare/wrangler-action@*
-```
-
-한 단계 더 가려면 같은 화면의 **Require actions to be pinned to a full-length commit SHA**를 켤 수 있는데,
-이걸 켜면 워크플로의 `@v4` 같은 **태그 참조가 전부 막힙니다.** 태그는 나중에 다른 커밋으로 옮겨질 수 있어
-SHA 고정이 더 안전하지만, 켜기 전에 `.github/workflows/*.yml`의 액션을 모두 커밋 SHA로 바꿔야 합니다.
-(예: `actions/checkout@8f4b7f8...  # v4.2.2`) 지금은 켜져 있지 않으므로 워크플로는 그대로 동작합니다.
+브라우저에서 야후 파이낸스를 직접 부르면 CORS로 차단되기 때문에, 정적 배포에서는
+시세를 **빌드할 때 미리 받아 구워둡니다.** 장중에 30분 지난 가격이 보일 수 있다는 뜻입니다.
+"거래일 대비 현재가 +37%" 같은 판단에는 지장이 없지만, 초 단위 시세가 필요하면 아래 부록을 보세요.
 
 ---
 
-## ② Cloudflare에서 값 3개 발급
+## 자주 나는 문제
 
-### 값 1 — `CLOUDFLARE_ACCOUNT_ID`
-
-1. https://dash.cloudflare.com 로그인
-2. 좌측 메뉴 **Compute (Workers) / Workers & Pages** 클릭
-3. 우측 사이드바의 **Account ID** 옆 복사 버튼 클릭
-   - 안 보이면 주소창을 보세요: `dash.cloudflare.com/`**`여기가 Account ID`**`/workers`
-4. 32자리 16진수 문자열입니다. 예: `a1b2c3d4e5f6...`
-
-### 값 2 — `CLOUDFLARE_API_TOKEN` (가장 중요)
-
-1. https://dash.cloudflare.com/profile/api-tokens 로 직접 이동
-   (또는 우상단 프로필 아이콘 → **My Profile → API Tokens**)
-2. **Create Token** 클릭
-3. 템플릿 목록에서 **Edit Cloudflare Workers** 의 **Use template** 클릭
-4. 권한이 아래로 채워져 있는지 확인하고, **없는 건 추가·있는 건 그대로** 두세요.
-
-   | 종류 | 항목 | 권한 |
-   | --- | --- | --- |
-   | Account | Workers Scripts | **Edit** |
-   | Account | Workers KV Storage | **Edit** *(KV를 쓸 때만 필요)* |
-   | Account | Account Settings | **Read** |
-   | Zone | Workers Routes | Edit *(커스텀 도메인을 붙일 때만. `workers.dev`만 쓸 거면 삭제해도 됩니다)* |
-
-5. **Account Resources** → `Include → 본인 계정 하나만` 선택 (All accounts 금지)
-6. **Client IP Address Filtering** → 비워두세요 (GitHub Actions는 IP가 고정되지 않습니다)
-7. **TTL** → 만료일을 1년 정도로 설정해두면 방치 위험이 줄어듭니다
-8. **Continue to summary → Create Token**
-9. ⚠️ **토큰 값은 이 화면에서 한 번만 보입니다.** 바로 복사하세요. 잃어버리면 새로 만들면 됩니다.
-
-> 유출이 의심되면 같은 화면에서 해당 토큰의 **Roll**(값 교체) 또는 **Delete**를 누르세요. 즉시 무효화됩니다.
-
-### 값 3 (선택) — `KV_NAMESPACE_ID`
-
-공시 갱신 때마다 재배포하는 대신 **데이터만 갈아끼우고 싶을 때** 쓰는 저장소입니다.
-
-```bash
-npx wrangler login                       # 브라우저로 로그인
-npx wrangler kv namespace create TRACKER_KV
-```
-
-출력에 나오는 `id = "..."` 값을 복사한 뒤:
-
-1. GitHub Secret `KV_NAMESPACE_ID`로 등록
-2. `wrangler.toml`의 아래 세 줄 주석을 풀고 id를 붙여넣기
-
-```toml
-[[kv_namespaces]]
-binding = "TRACKER_KV"
-id = "붙여넣은_네임스페이스_ID"
-```
-
----
-
-## ③ GitHub에 등록
-
-저장소 → **Settings → Secrets and variables → Actions → New repository secret**
-
-| Name (정확히 이 철자로) | Secret |
+| 증상 | 해결 |
 | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | 값 1 |
-| `CLOUDFLARE_API_TOKEN` | 값 2 |
-| `KV_NAMESPACE_ID` | 값 3 (선택 — 안 넣으면 이 단계는 자동으로 건너뜁니다) |
-
-이름이 하나라도 다르면 워크플로가 조용히 인증에 실패합니다. 복사·붙여넣기를 권합니다.
-
----
-
-## ④ 배포하고 확인
-
-### 처음 한 번은 로컬에서
-
-```bash
-npm install
-npx wrangler login
-npm run cf:deploy      # 공시 스냅샷 빌드 + 배포
-```
-
-끝나면 `https://follow-nancy-pelosi.<계정서브도메인>.workers.dev` 주소가 출력됩니다.
-`workers.dev subdomain not configured` 오류가 나면 대시보드 **Workers & Pages → 우측 subdomain 설정**에서 서브도메인을 한 번 만들어 주세요.
-
-### 그다음부터는 자동
-
-1. 이 브랜치를 **`main`에 머지**합니다. (스케줄 트리거는 기본 브랜치의 워크플로만 실행됩니다)
-2. **Actions 탭 → Deploy to Cloudflare Workers → Run workflow** 로 한 번 수동 실행해 초록불을 확인합니다.
-3. 이후로는 **푸시할 때마다 + 30분마다** 자동으로 공시를 다시 파싱하고 배포합니다.
-
-### 잘 되는지 보는 법
-
-```bash
-curl https://<배포주소>/api/health
-```
-
-```jsonc
-{ "ok": true, "dataOrigin": "snapshot", "dataBuiltAt": "2026-09-06T12:03:59Z", "transactions": 30 }
-```
-
-- `dataOrigin`: `kv`면 KV에서, `snapshot`이면 배포에 포함된 파일에서 읽은 것
-- `dataBuiltAt`: 공시를 마지막으로 파싱한 시각 (30분 이내여야 정상)
+| Actions 탭에 `Run workflow` 버튼이 없음 | 워크플로가 아직 `main`에 없습니다. ③번 머지를 먼저 하세요 |
+| 배포는 성공했는데 404 | **Settings → Pages → Source**가 `GitHub Actions`인지 확인 |
+| `Resource not accessible by integration` | Settings → Actions → General → Workflow permissions가 read여도 괜찮습니다. 이 오류는 Pages Source가 아직 Actions로 안 잡힌 경우가 대부분입니다 |
+| 30분 크론이 안 돎 | ① 워크플로가 `main`에 있는지 ② 60일 비활성으로 중지됐는지 확인 |
+| 화면은 뜨는데 데이터가 옛날 것 | 브라우저 캐시입니다. 새로고침 버튼을 누르거나 강력 새로고침(Ctrl/Cmd+Shift+R) |
+| 액션이 차단됨 (`is not allowed to be used`) | Settings → Actions 허용 목록에 `actions/*`가 있으면 됩니다. Pages 워크플로는 전부 `actions/` 소속입니다 |
 
 ---
 
-## 자주 나는 오류
+## 부록: 실시간 시세가 필요하면 (Cloudflare Workers)
 
-| 증상 | 원인과 해결 |
+주가를 요청 시점에 가져오고 다른 의원도 조회하려면 Cloudflare Workers로 배포하면 됩니다.
+**이 경우에도 로컬 작업은 없고**, 대시보드에서 워커를 미리 만들 필요도 없습니다(`wrangler deploy`가 만듭니다).
+시크릿 2개만 등록하면 GitHub Actions가 알아서 배포합니다.
+
+옮기는 절차는 [`cloudflare/README.md`](cloudflare/README.md)에 있고, 값 발급 위치는 이렇습니다.
+
+| 시크릿 | 어디서 얻나 |
 | --- | --- |
-| `Authentication error [code: 10000]` | 토큰 권한 부족. **Workers Scripts: Edit**과 **Account Settings: Read**가 있는지 확인 |
-| `You do not have permission to modify this KV namespace` | 토큰에 **Workers KV Storage: Edit** 누락 |
-| 크론이 안 돎 | ① 워크플로가 기본 브랜치에 있는지 ② 저장소에 60일간 활동이 없으면 스케줄이 자동 비활성화됩니다(아무 커밋이나 하면 재개) |
-| 배포는 됐는데 데이터가 안 바뀜 | KV를 쓰는 경우 `wrangler.toml`의 `[[kv_namespaces]]` 주석을 풀었는지 확인. 엣지 캐시는 5분이니 `?refresh=1`로 우회 |
-| `/api/report`가 404 | 스냅샷이 없는 상태. `npm run build:data` 후 다시 배포 |
+| `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → **Workers & Pages** → 우측 사이드바 **Account ID** (주소창 `dash.cloudflare.com/여기/workers`) |
+| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com/profile/api-tokens → **Create Token** → **Edit Cloudflare Workers** 템플릿 → Account Resources는 본인 계정만 → 생성 후 **한 번만 표시되니 즉시 복사** |
 
-## 비용 정리
+넣는 곳은 저장소 **Settings → Secrets and variables → Actions → New repository secret** 입니다.
 
-| 항목 | 무료 한도 | 이 프로젝트 사용량 |
-| --- | --- | --- |
-| Workers 요청 | 10만/일 | 방문자 수만큼 |
-| Workers KV 쓰기 | 1,000/일 | 48회 (30분 크론) |
-| GitHub Actions | 퍼블릭 **무제한** / 프라이빗 2,000분·월 | 회당 1~2분 × 48회/일 |
+토큰 최소 권한: `Workers Scripts: Edit` + `Account Settings: Read` (KV를 쓸 때만 `Workers KV Storage: Edit`).
+`workers.dev` 주소만 쓸 거면 Zone 권한은 필요 없습니다. 유출이 의심되면 같은 화면에서 **Roll** 또는 **Delete**.
 
-프라이빗을 유지하려면 크론을 `0 */3 * * *`(3시간) 정도로 늦추세요. 퍼블릭이면 그대로 두면 됩니다.
-
----
-
-## 참고: Cloudflare 대시보드의 "Git 연동(Workers Builds)"은 쓰지 않습니다
-
-Cloudflare에서 **Workers & Pages → Create → Import a repository** 로 들어가면
-저장소를 연결해 Cloudflare가 직접 빌드·배포하게 만드는 화면이 나옵니다.
-이 문서의 GitHub Actions 방식과 **같은 일을 하는 다른 방법**이라, 둘 다 켜면 한 워커에 두 시스템이 배포합니다.
-
-**이 프로젝트에서는 GitHub Actions 쪽을 씁니다.** 이유는 하나입니다 —
-Workers Builds에는 **스케줄(크론) 빌드가 없어서** git push 할 때만 빌드합니다.
-그러면 공시 데이터가 30분마다 갱신되지 않고, 코드를 푸시하는 날에만 갱신됩니다.
-
-굳이 Git 연동을 쓰고 싶다면 이렇게 채우세요(그리고 `deploy.yml`에서 `push:` 트리거를 지워 중복 배포를 막으세요).
-
-| 항목 | 값 |
-| --- | --- |
-| Project name | **`follow-nancy-pelosi`** — `wrangler.toml`의 `name`과 반드시 같아야 합니다 |
-| Build command | `npm run build:data` (비워두면 저장소에 커밋된 오래된 스냅샷이 그대로 배포됩니다) |
-| Deploy command | `npx wrangler deploy` (기본값 그대로) |
-| Builds for non-production branches | 해제 권장 (빌드 시간 절약. 브랜치 미리보기가 필요하면 유지) |
-| Protect with Cloudflare Access | **끄기** — 공개 사이트이므로 |
-| Advanced settings | 건드릴 것 없음 (환경변수·빌드 변수 불필요) |
-
-이 경우에도 30분 자동 갱신을 원하면 GitHub Actions의 `schedule` 트리거는 그대로 남겨둬야 하고,
-그러려면 어차피 `CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID` 시크릿이 필요합니다.
-결국 Actions 하나로 끝내는 편이 단순합니다.
+> Cloudflare 대시보드의 **Workers Builds(Git 연동)** 화면은 쓰지 않습니다.
+> 스케줄 빌드가 없어서 30분 자동 갱신이 안 되고, GitHub Actions와 배포가 중복됩니다.

@@ -68,7 +68,7 @@ async function handleReport(request, env, ctx) {
     quotesFor: fetchQuotes,
     lookbackDays: lookbackDays ?? dataset.lookbackDays ?? 400,
   });
-  report.deployment = { dataOrigin: origin, runtime: 'cloudflare-workers' };
+  report.deployment = { mode: 'live', dataOrigin: origin, runtime: 'cloudflare-workers' };
 
   const res = json(report, { maxAge: EDGE_TTL });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));

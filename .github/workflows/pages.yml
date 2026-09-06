@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+# Cloudflare 없이 GitHub Pages만으로 배포하는 경로.
+# 시세·시그널까지 빌드 시점에 구워서 순수 정적 파일로 올린다.
+# (Settings → Pages → Source를 'GitHub Actions'로 설정해야 동작합니다)
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # 공시 파싱 + 시세 조회 + 시그널 계산 → public/data/{snapshot,report}.json
+      - name: 데이터 빌드
+        run: npm run build:data
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
