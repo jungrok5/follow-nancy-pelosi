@@ -49,6 +49,11 @@ git grep -InE 'BEGIN [A-Z ]*PRIVATE KEY' $(git rev-list --all) -- .
 > "Deploy from a branch"가 아니라 **GitHub Actions**여야 합니다. 이 저장소는 매번 공시를 새로 파싱해
 > 정적 파일을 만들어 올리기 때문입니다.
 
+> ⚠️ Pages를 켜면 `github-pages` 환경이 자동으로 만들어지고, **그 시점의 기본 브랜치 이름**이
+> 배포 허용 목록에 박힙니다. 기본 브랜치가 `main`이 아닌 상태에서 Pages를 켰다면
+> **Settings → Environments → github-pages → Deployment branches and tags**에서 `main`으로 고쳐야
+> main에서의 배포와 30분 크론이 동작합니다.
+
 선택만 하면 됩니다. 브랜치나 폴더는 고르지 않습니다.
 
 ---
@@ -122,6 +127,7 @@ GitHub Pages는 정적 호스팅이라 **서버가 없습니다.** 그래서:
 | --- | --- |
 | Actions 탭에 `Run workflow` 버튼이 없음 | 워크플로가 아직 `main`에 없습니다. ③번 머지를 먼저 하세요 |
 | 배포는 성공했는데 404 | **Settings → Pages → Source**가 `GitHub Actions`인지 확인 |
+| 잡이 **3초 만에 실패**하고 로그가 아예 없음 | `github-pages` **환경의 배포 브랜치 정책**에 막힌 것입니다. **Settings → Environments → github-pages → Deployment branches and tags**에 배포하려는 브랜치(보통 `main`)가 있는지 확인하세요. 이 규칙은 Pages를 켤 당시의 기본 브랜치 이름이 박히므로, 나중에 기본 브랜치를 바꿔도 **자동으로 따라오지 않습니다** |
 | `Resource not accessible by integration` | Settings → Actions → General → Workflow permissions가 read여도 괜찮습니다. 이 오류는 Pages Source가 아직 Actions로 안 잡힌 경우가 대부분입니다 |
 | 30분 크론이 안 돎 | ① 워크플로가 `main`에 있는지 ② 60일 비활성으로 중지됐는지 확인 |
 | 화면은 뜨는데 데이터가 옛날 것 | 브라우저 캐시입니다. 새로고침 버튼을 누르거나 강력 새로고침(Ctrl/Cmd+Shift+R) |
